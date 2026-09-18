@@ -1,25 +1,41 @@
+from numbers import Real
+
 from backend.database.database import get_connection
 
 
-def get_food_nutrition(food_name, quantity_g=100):
+def get_food_nutrition(food_name: str, quantity_g: Real = 100):
+    """Return deterministic nutrition values scaled from the IFCT per-100 g data."""
+    if not isinstance(food_name, str) or not food_name.strip():
+        raise ValueError("food_name must be a non-empty string")
+
+    if isinstance(quantity_g, bool) or not isinstance(quantity_g, Real):
+        raise ValueError("quantity_g must be a positive number")
+
+    if quantity_g <= 0:
+        raise ValueError("quantity_g must be a positive number")
+
     conn = get_connection()
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT food_name, energy_kj, protein_g, fat_g,
+                   carbohydrate_g, fiber_g
+            FROM foods
+            WHERE food_name LIKE ?
+            LIMIT 1
+        """, (f"%{food_name.strip()}%",))
 
-    cursor.execute("""
-        SELECT food_name, energy_kj, protein_g, fat_g,
-               carbohydrate_g, fiber_g
-        FROM foods
-        WHERE food_name LIKE ?
-        LIMIT 1
-    """, (f"%{food_name}%",))
-
-    food = cursor.fetchone()
-    conn.close()
+        food = cursor.fetchone()
+    finally:
+        conn.close()
 
     if not food:
         return None
 
     name, energy, protein, fat, carbs, fiber = food
+    nutrients = (energy, protein, fat, carbs, fiber)
+    if any(value is None for value in nutrients):
+        raise ValueError(f"Nutrition data is incomplete for {name}")
 
     factor = quantity_g / 100
 
